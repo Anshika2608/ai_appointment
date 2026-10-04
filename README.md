@@ -1,3 +1,4 @@
+Deployed link : https://ai-appointment-pbq2.vercel.app/
 # HealthPlus: AI-Powered Medical Appointment Booking System
 
 An intelligent, full-stack appointment scheduling platform featuring **MediBot**, an autonomous conversational agent integrated with **Groq LLM function calling**, **Next.js 16 (App Router)**, and **Supabase (PostgreSQL with Row Level Security)**.
