@@ -136,6 +136,10 @@ DROP POLICY IF EXISTS "appointments_insert_own" ON appointments;
 CREATE POLICY "appointments_insert_own" ON appointments
   FOR INSERT WITH CHECK (true);
 
+DROP POLICY IF EXISTS "appointments_update_own" ON appointments;
+CREATE POLICY "appointments_update_own" ON appointments
+  FOR UPDATE USING (auth.uid() = user_id OR user_id IS NULL);
+
 -- chat_sessions: users see only their own
 ALTER TABLE chat_sessions ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "chat_sessions_select_own" ON chat_sessions;

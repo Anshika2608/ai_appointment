@@ -2,28 +2,43 @@ import { createServerClient } from '@supabase/ssr'
 import { createClient as createSupabaseAdminClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 
+function getRequiredEnv(name: string): string {
+  const value = process.env[name]
+
+  if (!value) {
+    throw new Error(
+      `Missing required environment variable: ${name}. ` +
+        `Please add it to your .env.local file and restart the server.`
+    )
+  }
+
+  return value
+}
 
 // Server-side Supabase client.
- 
 export async function createClient() {
   const cookieStore = await cookies()
 
+  const supabaseUrl = getRequiredEnv('NEXT_PUBLIC_SUPABASE_URL')
+  const supabaseAnonKey = getRequiredEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY')
+
   return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    supabaseUrl,
+    supabaseAnonKey,
     {
       cookies: {
         getAll() {
           return cookieStore.getAll()
         },
+
         setAll(cookiesToSet) {
           try {
             cookiesToSet.forEach(({ name, value, options }) =>
               cookieStore.set(name, value, options),
             )
           } catch {
-            // setAll called from a Server Component — safe to ignore
-          
+            // setAll can be called from a Server Component.
+            // Safe to ignore because middleware handles session refresh.
           }
         },
       },
@@ -31,13 +46,17 @@ export async function createClient() {
   )
 }
 
-
- //Admin Supabase client — bypasses Row Level Security.
- 
+// Admin Supabase client — uses service role key if available, otherwise falls back to anon key
 export function createAdminClient() {
+  const supabaseUrl = getRequiredEnv('NEXT_PUBLIC_SUPABASE_URL')
+  const serviceKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    ''
+
   return createSupabaseAdminClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    supabaseUrl,
+    serviceKey,
     {
       auth: {
         autoRefreshToken: false,
