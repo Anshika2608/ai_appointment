@@ -64,18 +64,24 @@ export default function Home() {
 
         <nav className="flex items-center gap-3">
           <Link
+            href="/auth/login"
+            className="px-4 py-2 text-xs sm:text-sm font-medium rounded-xl text-zinc-600 hover:text-emerald-700 hover:bg-emerald-50/60 transition-colors"
+          >
+            Sign In
+          </Link>
+          <Link
             href="/chat"
             className="px-5 py-2.5 text-xs sm:text-sm font-medium rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm shadow-emerald-600/20 transition-all active:scale-95 flex items-center gap-1.5"
           >
-            <span>Book Appointment</span>
+            <span>Start Chat</span>
             <span className="text-emerald-200">→</span>
           </Link>
-          <Link
+          {/* <Link
             href="/admin"
             className="px-4 py-2 text-xs sm:text-sm font-medium rounded-xl border border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50 transition-colors hidden sm:inline-block"
           >
             Admin
-          </Link>
+          </Link> */}
         </nav>
       </header>
 

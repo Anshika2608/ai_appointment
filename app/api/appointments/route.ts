@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { bookAppointment } from '@/lib/services/appointmentService'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const status = searchParams.get('status')
     const doctorId = searchParams.get('doctor_id')
-    const limit = parseInt(searchParams.get('limit') || '50', 10)
+    const limit = parseInt(searchParams.get('limit') || '100', 10)
 
-    const supabase = await createClient()
+    const supabase = createAdminClient()
     let query = supabase
       .from('appointments')
       .select(`

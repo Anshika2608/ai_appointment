@@ -33,25 +33,35 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  // Protect /admin routes — redirect to login if not authenticated
-  if (request.nextUrl.pathname.startsWith('/admin')) {
+  // Protect /chat routes — redirect to login if not authenticated
+  if (request.nextUrl.pathname.startsWith('/chat')) {
     if (!user) {
       const url = request.nextUrl.clone()
       url.pathname = '/auth/login'
       url.searchParams.set('redirectTo', request.nextUrl.pathname)
       return NextResponse.redirect(url)
     }
+  }
 
-    // Check if user has admin role (via profiles table)
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single()
+  // If already authenticated and accessing login/signup, redirect to chat
+  if (
+    user &&
+    (request.nextUrl.pathname === '/auth/login' ||
+      request.nextUrl.pathname === '/auth/signup')
+  ) {
+    const redirectTo = request.nextUrl.searchParams.get('redirectTo') || '/chat'
+    const url = request.nextUrl.clone()
+    url.pathname = redirectTo
+    url.search = ''
+    return NextResponse.redirect(url)
+  }
 
-    if (!profile || profile.role !== 'admin') {
+  // Protect /admin routes — redirect to login if not authenticated
+  if (request.nextUrl.pathname.startsWith('/admin')) {
+    if (!user) {
       const url = request.nextUrl.clone()
-      url.pathname = '/'
+      url.pathname = '/auth/login'
+      url.searchParams.set('redirectTo', request.nextUrl.pathname)
       return NextResponse.redirect(url)
     }
   }

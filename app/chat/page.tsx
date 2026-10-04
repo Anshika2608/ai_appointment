@@ -26,8 +26,52 @@ export default function ChatPage() {
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [sessionKey, setSessionKey] = useState<string>('')
+  const [currentUser, setCurrentUser] = useState<any>(null)
+  const [currentProfile, setCurrentProfile] = useState<any>(null)
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true)
+
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  // 1. Verify user authentication upon entry
+  useEffect(() => {
+    async function verifyAuth() {
+      try {
+        const res = await fetch('/api/auth/me')
+        const data = await res.json()
+        if (!data.authenticated || !data.user) {
+          window.location.href = '/auth/login?redirectTo=/chat'
+          return
+        }
+        setCurrentUser(data.user)
+        setCurrentProfile(data.profile)
+
+        const displayName =
+          data.profile?.full_name ||
+          data.user?.user_metadata?.full_name ||
+          data.user?.email?.split('@')[0] ||
+          ''
+
+        if (displayName) {
+          setMessages([
+            {
+              id: 'init-1',
+              role: 'assistant',
+              content: `Hello ${displayName}! 👋 I'm **MediBot**, your AI assistant for HealthPlus Clinic.\n\nI can help you find the right specialist, check doctor schedules across morning & evening shifts, and book your appointment in seconds.\n\nHow can I help you today? You can describe your health issue or ask for a doctor directly!`,
+              timestamp: 'Just now',
+            },
+          ])
+        }
+      } catch (err) {
+        console.error('Auth verification failed:', err)
+        window.location.href = '/auth/login?redirectTo=/chat'
+      } finally {
+        setIsCheckingAuth(false)
+      }
+    }
+
+    verifyAuth()
+  }, [])
 
   // Initialize unique session key from localStorage
   useEffect(() => {
@@ -45,8 +89,10 @@ export default function ChatPage() {
   }
 
   useEffect(() => {
-    scrollToBottom()
-  }, [messages, isLoading])
+    if (!isCheckingAuth) {
+      scrollToBottom()
+    }
+  }, [messages, isLoading, isCheckingAuth])
 
   // Send message to /api/chat
   const handleSendMessage = async (textToSend?: string) => {
@@ -126,8 +172,40 @@ export default function ChatPage() {
       const newKey = 'session_' + Math.random().toString(36).substring(2, 12)
       localStorage.setItem('medi_chat_session_key', newKey)
       setSessionKey(newKey)
-      setMessages([INITIAL_MESSAGE])
+      const displayName =
+        currentProfile?.full_name ||
+        currentUser?.user_metadata?.full_name ||
+        currentUser?.email?.split('@')[0] ||
+        ''
+      setMessages([
+        {
+          id: 'init-1',
+          role: 'assistant',
+          content: `Hello${displayName ? ' ' + displayName : ''}! 👋 I'm **MediBot**, your AI assistant for HealthPlus Clinic.\n\nHow can I help you today? You can describe your health issue or ask for a doctor directly!`,
+          timestamp: 'Just now',
+        },
+      ])
     }
+  }
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' })
+    } finally {
+      window.location.href = '/auth/login'
+    }
+  }
+
+  if (isCheckingAuth) {
+    return (
+      <div className="min-h-screen bg-[#fafcfb] flex flex-col items-center justify-center p-4">
+        <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-600 flex items-center justify-center text-white text-2xl shadow-lg shadow-emerald-600/20 animate-pulse mb-4">
+          🩺
+        </div>
+        <p className="text-zinc-700 font-medium text-sm">Verifying your HealthPlus session...</p>
+        <p className="text-zinc-400 text-xs mt-1 font-light">Redirecting to login if not signed in</p>
+      </div>
+    )
   }
 
   return (
@@ -158,21 +236,38 @@ export default function ChatPage() {
 
         {/* Header Actions */}
         <div className="flex items-center gap-2">
-          <button
+          {currentUser && (
+            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-emerald-50/80 border border-emerald-200/60 rounded-xl text-xs text-emerald-900 font-medium">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+              <span>
+                {currentProfile?.full_name || currentUser?.email?.split('@')[0]}
+              </span>
+            </div>
+          )}
+
+          {/* <button
             onClick={handleResetChat}
             title="Reset conversation"
             className="px-3 py-1.5 text-xs font-medium text-zinc-600 hover:text-zinc-900 hover:bg-emerald-50 rounded-xl transition-colors border border-transparent hover:border-emerald-200/60 cursor-pointer"
           >
             🔄 Reset
+          </button> */}
+
+          <button
+            onClick={handleLogout}
+            title="Sign out"
+            className="px-3 py-1.5 text-xs font-medium text-zinc-600 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors border border-transparent hover:border-red-200/60 cursor-pointer"
+          >
+            Sign Out
           </button>
 
-          <Link
+          {/* <Link
             href="/admin"
-            className="px-3.5 py-1.5 text-xs font-medium bg-zinc-900 text-white rounded-xl hover:bg-emerald-700 transition-all shadow-xs flex items-center gap-1"
+            className="px-3.5 py-1.5 text-xs font-medium bg-zinc-900 text-white rounded-xl hover:bg-emerald-700 transition-all shadow-xs flex items-center gap-1 hidden sm:flex"
           >
             <span>Admin</span>
             <span>→</span>
-          </Link>
+          </Link> */}
         </div>
       </header>
 

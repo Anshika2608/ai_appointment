@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -8,7 +8,7 @@ interface RouteParams {
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
-    const supabase = await createClient()
+    const supabase = createAdminClient()
 
     const { data, error } = await supabase
       .from('appointments')
@@ -48,7 +48,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
     const body = await request.json()
-    const { status, admin_notes } = body
+    const { status, admin_notes, appointment_datetime, doctor_id, reason, patient_name, patient_phone } = body
 
     const updatePayload: Record<string, any> = {}
     if (status) {
@@ -65,15 +65,30 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     if (admin_notes !== undefined) {
       updatePayload.admin_notes = admin_notes
     }
+    if (appointment_datetime) {
+      updatePayload.appointment_datetime = appointment_datetime
+    }
+    if (doctor_id) {
+      updatePayload.doctor_id = doctor_id
+    }
+    if (reason !== undefined) {
+      updatePayload.reason = reason
+    }
+    if (patient_name) {
+      updatePayload.patient_name = patient_name.trim()
+    }
+    if (patient_phone) {
+      updatePayload.patient_phone = patient_phone.trim()
+    }
 
     if (Object.keys(updatePayload).length === 0) {
       return NextResponse.json(
-        { success: false, error: 'No fields provided for update (status or admin_notes)' },
+        { success: false, error: 'No fields provided for update' },
         { status: 400 }
       )
     }
 
-    const supabase = await createClient()
+    const supabase = createAdminClient()
     const { data, error } = await supabase
       .from('appointments')
       .update(updatePayload)
@@ -82,11 +97,18 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         id,
         patient_name,
         patient_phone,
+        patient_email,
         doctor_id,
         appointment_datetime,
         reason,
         status,
-        admin_notes
+        admin_notes,
+        doctors (
+          id,
+          name,
+          specialty,
+          consultation_fee
+        )
       `)
       .single()
 
@@ -95,6 +117,26 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     return NextResponse.json({ success: true, appointment: data })
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 })
+  }
+}
+
+export async function DELETE(request: NextRequest, { params }: RouteParams) {
+  try {
+    const { id } = await params
+    const supabase = createAdminClient()
+
+    const { error } = await supabase
+      .from('appointments')
+      .delete()
+      .eq('id', id)
+
+    if (error) {
+      throw new Error(`Failed to delete appointment: ${error.message}`)
+    }
+
+    return NextResponse.json({ success: true, message: 'Appointment deleted successfully' })
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 })
   }

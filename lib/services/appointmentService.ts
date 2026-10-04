@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 
 export interface ShiftSlots {
   shift_name: string
@@ -35,7 +35,7 @@ export interface BookingInput {
  */
 export async function findDoctor(idOrName: string) {
   if (!idOrName || !idOrName.trim()) return null
-  const supabase = await createClient()
+  const supabase = createAdminClient()
   const trimmed = idOrName.trim()
 
   const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)
@@ -164,12 +164,20 @@ function generateTimeSlots(startTime: string, endTime: string, stepMinutes: numb
   let currentTotalMin = startH * 60 + startM
   const endTotalMin = endH * 60 + endM
 
-  while (currentTotalMin + stepMinutes <= endTotalMin) {
+  // If start_time equals end_time (single slot in schedule), return it directly
+  if (currentTotalMin === endTotalMin) {
+    const hours = Math.floor(currentTotalMin / 60)
+    const mins = currentTotalMin % 60
+    return [`${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`]
+  }
+
+  // Include all slots starting from startTime up to and including endTime
+  while (currentTotalMin <= endTotalMin) {
     const hours = Math.floor(currentTotalMin / 60)
     const mins = currentTotalMin % 60
     const formatted = `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`
     slots.push(formatted)
-    currentTotalMin += stepMinutes
+    currentTotalMin += (stepMinutes || 30)
   }
 
   return slots
@@ -194,11 +202,13 @@ export async function checkDoctorAvailability(doctorIdOrName: string, dateStr: s
   if (!year || !month || !day) {
     throw new Error(`Invalid date format. Expected YYYY-MM-DD, received: ${dateStr}`)
   }
-  const dateObj = new Date(year, month - 1, day)
-  const dayOfWeek = dateObj.getDay()
 
-  const supabase = await createClient()
-  const { data: schedules, error: schedError } = await supabase
+  // Safe UTC date calculation to prevent local timezone day displacement
+  const dateObj = new Date(Date.UTC(year, month - 1, day))
+  const dayOfWeek = dateObj.getUTCDay()
+
+  const supabase = createAdminClient()
+  let { data: schedules, error: schedError } = await supabase
     .from('doctor_schedules')
     .select('id, shift_name, start_time, end_time, slot_duration_minutes')
     .eq('doctor_id', doctorId)
@@ -209,25 +219,33 @@ export async function checkDoctorAvailability(doctorIdOrName: string, dateStr: s
     throw new Error(`Failed to query schedule: ${schedError.message}`)
   }
 
+  // Fallback: If no schedule exists for this specific day_of_week, check if doctor has schedules on other days or general clinic shifts
   if (!schedules || schedules.length === 0) {
-    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-    return {
-      doctor_id: doctor.id,
-      doctor_name: doctor.name,
-      specialty: doctor.specialty,
-      consultation_fee: doctor.consultation_fee,
-      date: cleanDateStr,
-      day_of_week: dayOfWeek,
-      is_working_day: false,
-      shifts: [],
-      available_slots: [],
-      message: `${doctor.name} is not scheduled to consult on ${days[dayOfWeek]} (${cleanDateStr}).`,
+    const { data: generalSchedules } = await supabase
+      .from('doctor_schedules')
+      .select('id, shift_name, start_time, end_time, slot_duration_minutes')
+      .eq('doctor_id', doctorId)
+      .order('start_time', { ascending: true })
+
+    if (generalSchedules && generalSchedules.length > 0) {
+      const seen = new Set<string>()
+      schedules = generalSchedules.filter((s) => {
+        if (seen.has(s.start_time)) return false
+        seen.add(s.start_time)
+        return true
+      })
+    } else {
+      // Default standard clinic shifts for active doctor (Morning 09:00-13:00, Evening 16:00-20:00)
+      schedules = [
+        { id: 'def-1', shift_name: 'Morning', start_time: '09:00', end_time: '13:00', slot_duration_minutes: 30 },
+        { id: 'def-2', shift_name: 'Evening', start_time: '16:00', end_time: '20:00', slot_duration_minutes: 30 },
+      ]
     }
   }
 
-  // Existing booked appointments
-  const startOfDay = `${cleanDateStr}T00:00:00Z`
-  const endOfDay = `${cleanDateStr}T23:59:59Z`
+  // Existing booked appointments (using admin client so all patient bookings across database are considered)
+  const startOfDay = `${cleanDateStr}T00:00:00.000Z`
+  const endOfDay = `${cleanDateStr}T23:59:59.999Z`
 
   const { data: bookedAppointments, error: apptError } = await supabase
     .from('appointments')
@@ -241,14 +259,21 @@ export async function checkDoctorAvailability(doctorIdOrName: string, dateStr: s
     throw new Error(`Failed to check existing bookings: ${apptError.message}`)
   }
 
-  const bookedTimes = new Set(
-    (bookedAppointments || []).map((appt) => {
-      const d = new Date(appt.appointment_datetime)
+  const bookedTimes = new Set<string>()
+  for (const appt of bookedAppointments || []) {
+    // 1. Direct regex extraction from ISO string (e.g. "2026-10-05T16:00:00Z" -> "16:00")
+    const match = appt.appointment_datetime.match(/[T\s](\d{2}):(\d{2})/)
+    if (match) {
+      bookedTimes.add(`${match[1]}:${match[2]}`)
+    }
+    // 2. Also UTC extraction as fallback
+    const d = new Date(appt.appointment_datetime)
+    if (!isNaN(d.getTime())) {
       const h = String(d.getUTCHours()).padStart(2, '0')
       const m = String(d.getUTCMinutes()).padStart(2, '0')
-      return `${h}:${m}`
-    })
-  )
+      bookedTimes.add(`${h}:${m}`)
+    }
+  }
 
   const shifts: ShiftSlots[] = []
   const allAvailableSlots: string[] = []
@@ -297,7 +322,7 @@ export async function checkDoctorAvailability(doctorIdOrName: string, dateStr: s
  * Book an appointment with robust validation, doctor lookup, and collision check
  */
 export async function bookAppointment(input: BookingInput) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   if (!input.patient_name?.trim()) throw new Error('Patient name is required.')
   if (!input.doctor_id) throw new Error('Doctor identifier is required.')
